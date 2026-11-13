@@ -8,35 +8,38 @@ describe('CheckoutService', () => {
     const cartao = { numero: '4111111111111111' };
 
     describe('quando o pagamento falha', () => {
-        let gatewayStub;
-        let repositoryDummy;
-        let emailDummy;
-        let checkoutService;
-        let pedido;
-
-        beforeEach(async () => {
+        it('deve retornar null (verificação de estado)', async () => {
             // Arrange
             const carrinho = new CarrinhoBuilder().build();
-            // Stub: só devolve uma resposta pré-definida
-            gatewayStub = { cobrar: jest.fn().mockResolvedValue({ success: false }) };
-            // Dummies: não devem ser chamados
-            repositoryDummy = { salvar: jest.fn() };
-            emailDummy = { enviarEmail: jest.fn() };
-            checkoutService = new CheckoutService(gatewayStub, repositoryDummy, emailDummy);
+            // Stub: a única função dele é devolver uma resposta pré-definida
+            const gatewayStub = { cobrar: jest.fn().mockResolvedValue({ success: false }) };
+            // Dummies: apenas preenchem o construtor, nunca são verificados
+            const repositoryDummy = {};
+            const emailDummy = {};
+            const checkoutService = new CheckoutService(gatewayStub, repositoryDummy, emailDummy);
 
             // Act
-            pedido = await checkoutService.processarPedido(carrinho, cartao);
-        });
+            const pedido = await checkoutService.processarPedido(carrinho, cartao);
 
-        it('deve retornar null (verificação de estado)', () => {
-            // Assert
+            // Assert (verificação de estado)
             expect(pedido).toBeNull();
         });
 
-        it('não deve salvar o pedido nem enviar e-mail', () => {
+        it('não deve salvar o pedido nem enviar e-mail (verificação de comportamento)', async () => {
+            // Arrange
+            const carrinho = new CarrinhoBuilder().build();
+            const gatewayStub = { cobrar: jest.fn().mockResolvedValue({ success: false }) };
+            // Aqui Repository e EmailService são Mocks: o que importa é que NÃO foram chamados
+            const repositoryMock = { salvar: jest.fn() };
+            const emailMock = { enviarEmail: jest.fn() };
+            const checkoutService = new CheckoutService(gatewayStub, repositoryMock, emailMock);
+
+            // Act
+            await checkoutService.processarPedido(carrinho, cartao);
+
             // Assert
-            expect(repositoryDummy.salvar).not.toHaveBeenCalled();
-            expect(emailDummy.enviarEmail).not.toHaveBeenCalled();
+            expect(repositoryMock.salvar).not.toHaveBeenCalled();
+            expect(emailMock.enviarEmail).not.toHaveBeenCalled();
         });
     });
 
@@ -47,9 +50,11 @@ describe('CheckoutService', () => {
                 .comUser(UserMother.umUsuarioPadrao())
                 .comItens([new Item('Livro', 80), new Item('Caneta', 20)])
                 .build();
-            const pedidoSalvo = new Pedido(1, carrinho, 100, 'PROCESSADO');
             const gatewayStub = { cobrar: jest.fn().mockResolvedValue({ success: true }) };
-            const repositoryStub = { salvar: jest.fn().mockResolvedValue(pedidoSalvo) };
+            // Stub que "salva" devolvendo o pedido montado pelo service, com um id
+            const repositoryStub = {
+                salvar: jest.fn(async (p) => new Pedido(1, p.carrinho, p.totalFinal, p.status)),
+            };
             const emailDummy = { enviarEmail: jest.fn().mockResolvedValue() };
             const checkoutService = new CheckoutService(gatewayStub, repositoryStub, emailDummy);
 
@@ -57,7 +62,7 @@ describe('CheckoutService', () => {
             const pedido = await checkoutService.processarPedido(carrinho, cartao);
 
             // Assert (verificação de estado)
-            expect(pedido).toBe(pedidoSalvo);
+            expect(pedido.carrinho).toBe(carrinho);
             expect(pedido.totalFinal).toBe(100);
             expect(pedido.status).toBe('PROCESSADO');
         });
